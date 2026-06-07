@@ -51,9 +51,9 @@ function fetch_demons(): array {
         return [];
     }
 
-    // Parse JSON embedded in script tag
-    // Look for: <script id="roulette-data" type="application/json">[...]</script>
-    if (preg_match('/<script[^>]*id=["\']roulette-data["\'][^>]*type=["\']application\/json["\'][^>]*>(.+?)<\/script>/s', $body, $matches)) {
+    // Parse JSON embedded in script tag - more flexible regex
+    // Look for: <script ... id="roulette-data" ... >...</script>
+    if (preg_match('/<script[^>]+id=["\']roulette-data["\'][^>]*>(.+?)<\/script>/s', $body, $matches)) {
         $json_str = $matches[1];
         $data = json_decode($json_str, true);
         
