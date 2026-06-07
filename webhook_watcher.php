@@ -64,7 +64,7 @@ function fetch_demons(): array {
         }
 
         if (count($demons) < $limit) break;
-        $after = (int)(end($demons)['position'] ?? 0);
+        $after = (int)(end($demons)['id'] ?? 0);
     }
 
     return $all;
