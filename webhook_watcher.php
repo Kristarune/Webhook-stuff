@@ -10,7 +10,7 @@ declare(strict_types=1);
 
 // ─── CONFIG ─────────────────────────────────────────────────
 define('DISCORD_WEBHOOK', getenv('DISCORD_WEBHOOK') ?: '');
-define('SITE_URL',        'https://completedlist.gamer.gd/demonlist');
+define('SITE_URL',        'https://completedlist.gamer.gd/demonlist/roulette');
 define('CACHE_FILE',      __DIR__ . '/demon_cache.json');
 define('LIST_LIMIT',      150);
 // ────────────────────────────────────────────────────────────
