@@ -11,6 +11,7 @@ declare(strict_types=1);
 // ─── CONFIG ─────────────────────────────────────────────────
 define('DISCORD_WEBHOOK', getenv('DISCORD_WEBHOOK') ?: '');
 define('SITE_URL',        'https://completedlist.gamer.gd/demonlist');
+define('API_URL',         'https://completedlist.gamer.gd/demonlist/?json=1');
 define('CACHE_FILE',      __DIR__ . '/demon_cache.json');
 define('LIST_LIMIT',      150);
 // ────────────────────────────────────────────────────────────
@@ -20,51 +21,53 @@ function log_msg(string $msg): void {
 }
 
 function fetch_demons(): array {
-    $all   = [];
-    $after = 0;
-    $limit = 50;
+    $all = [];
 
-    while (count($all) < LIST_LIMIT) {
-        $url = SITE_URL . '/api/v1/demons/?limit=' . $limit . '&after=' . $after;
+    $ch = curl_init(API_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 15,
+        CURLOPT_HTTPHEADER     => [
+            'Accept: application/json',
+            'User-Agent: Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+        ],
+        CURLOPT_SSL_VERIFYPEER => true,
+    ]);
 
-        $ch = curl_init($url);
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT        => 15,
-            CURLOPT_HTTPHEADER     => [
-                'Accept: application/json',
-                'User-Agent: Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-            ],
-            CURLOPT_SSL_VERIFYPEER => true,
-        ]);
+    $body   = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err    = curl_error($ch);
+    curl_close($ch);
 
-        $body   = curl_exec($ch);
-        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err    = curl_error($ch);
-        curl_close($ch);
+    if ($err || $status !== 200) {
+        log_msg("API error — HTTP $status | $err");
+        return [];
+    }
 
-        if ($err || $status !== 200) {
-            log_msg("API error — HTTP $status | $err");
-            break;
-        }
+    $data = json_decode($body, true);
+    if (empty($data) || !isset($data['demons']) || !is_array($data['demons'])) {
+        log_msg('Invalid API response format');
+        return [];
+    }
 
-        $demons = json_decode($body, true);
-        if (empty($demons) || !is_array($demons)) break;
+    $demons = $data['demons'];
+    $count = 0;
 
-        foreach ($demons as $d) {
-            $id = (int)($d['id'] ?? 0);
-            if (!$id) continue;
-            $all[$id] = [
-                'id'        => $id,
-                'name'      => $d['name']              ?? 'Unknown',
-                'position'  => (int)($d['position']    ?? 0),
-                'publisher' => $d['publisher']['name'] ?? 'Unknown',
-                'video'     => $d['video']             ?? null,
-            ];
-        }
+    foreach ($demons as $d) {
+        if ($count >= LIST_LIMIT) break;
 
-        if (count($demons) < $limit) break;
-        $after = (int)(end($demons)['id'] ?? 0);
+        $id = (int)($d['id'] ?? 0);
+        if (!$id) continue;
+
+        $all[$id] = [
+            'id'        => $id,
+            'name'      => $d['name']              ?? 'Unknown',
+            'position'  => (int)($d['position']    ?? 0),
+            'publisher' => $d['publisher']['name'] ?? 'Unknown',
+            'video'     => $d['video']             ?? null,
+        ];
+
+        $count++;
     }
 
     return $all;
