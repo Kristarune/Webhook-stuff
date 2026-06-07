@@ -27,6 +27,7 @@ function fetch_demons(): array {
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 15,
+        CURLOPT_ENCODING       => 'gzip, deflate',
         CURLOPT_HTTPHEADER     => [
             'Accept: application/json',
             'User-Agent: Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
@@ -44,18 +45,44 @@ function fetch_demons(): array {
         return [];
     }
 
-    $data = json_decode($body, true);
-    if (empty($data) || !is_array($data)) {
-        log_msg('Invalid API response format');
+    if (!$body) {
+        log_msg('Empty API response body');
         return [];
     }
 
-    // The API returns an array of demons directly
+    $data = json_decode($body, true);
+    if ($data === null) {
+        log_msg('JSON decode error: ' . json_last_error_msg());
+        log_msg('Response preview: ' . substr($body, 0, 500));
+        return [];
+    }
+
+    if (!is_array($data)) {
+        log_msg('API response is not an array');
+        return [];
+    }
+
+    // Handle both direct array and wrapped response
     $demons = $data;
+    
+    // If response is object with 'data' key, use that
+    if (isset($data['data']) && is_array($data['data'])) {
+        $demons = $data['data'];
+    }
+
+    if (empty($demons)) {
+        log_msg('No demons in API response');
+        return [];
+    }
+
     $count = 0;
 
     foreach ($demons as $d) {
         if ($count >= LIST_LIMIT) break;
+
+        if (!is_array($d)) {
+            continue;
+        }
 
         // Handle both id and position as potential identifiers
         $id = (int)($d['id'] ?? $d['position'] ?? 0);
