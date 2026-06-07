@@ -11,7 +11,6 @@ declare(strict_types=1);
 // ─── CONFIG ─────────────────────────────────────────────────
 define('DISCORD_WEBHOOK', getenv('DISCORD_WEBHOOK') ?: '');
 define('SITE_URL',        'https://completedlist.gamer.gd/demonlist');
-define('API_URL',         'https://completedlist.gamer.gd/demonlist/?page=1&json=1');
 define('CACHE_FILE',      __DIR__ . '/demon_cache.json');
 define('LIST_LIMIT',      150);
 // ────────────────────────────────────────────────────────────
@@ -23,14 +22,16 @@ function log_msg(string $msg): void {
 function fetch_demons(): array {
     $all = [];
 
-    $ch = curl_init(API_URL);
+    $ch = curl_init(SITE_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_TIMEOUT        => 15,
         CURLOPT_ENCODING       => 'gzip, deflate',
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 5,
         CURLOPT_HTTPHEADER     => [
-            'Accept: application/json',
-            'User-Agent: Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36',
         ],
         CURLOPT_SSL_VERIFYPEER => true,
     ]);
@@ -41,66 +42,64 @@ function fetch_demons(): array {
     curl_close($ch);
 
     if ($err || $status !== 200) {
-        log_msg("API error — HTTP $status | $err");
+        log_msg("Page fetch error — HTTP $status | $err");
         return [];
     }
 
     if (!$body) {
-        log_msg('Empty API response body');
+        log_msg('Empty page response body');
         return [];
     }
 
-    $data = json_decode($body, true);
-    if ($data === null) {
-        log_msg('JSON decode error: ' . json_last_error_msg());
-        log_msg('Response preview: ' . substr($body, 0, 500));
-        return [];
-    }
-
-    if (!is_array($data)) {
-        log_msg('API response is not an array');
-        return [];
-    }
-
-    // Handle both direct array and wrapped response
-    $demons = $data;
-    
-    // If response is object with 'data' key, use that
-    if (isset($data['data']) && is_array($data['data'])) {
-        $demons = $data['data'];
-    }
-
-    if (empty($demons)) {
-        log_msg('No demons in API response');
-        return [];
-    }
-
-    $count = 0;
-
-    foreach ($demons as $d) {
-        if ($count >= LIST_LIMIT) break;
-
-        if (!is_array($d)) {
-            continue;
+    // Parse JSON embedded in script tag
+    // Look for: <script id="roulette-data" type="application/json">[...]</script>
+    if (preg_match('/<script[^>]*id=["\']roulette-data["\'][^>]*type=["\']application\/json["\'][^>]*>(.+?)<\/script>/s', $body, $matches)) {
+        $json_str = $matches[1];
+        $data = json_decode($json_str, true);
+        
+        if ($data === null) {
+            log_msg('JSON decode error from roulette-data: ' . json_last_error_msg());
+            return [];
         }
 
-        // Handle both id and position as potential identifiers
-        $id = (int)($d['id'] ?? $d['position'] ?? 0);
-        if (!$id) continue;
+        if (!is_array($data)) {
+            log_msg('Roulette data is not an array');
+            return [];
+        }
 
-        $all[$id] = [
-            'id'        => $id,
-            'name'      => $d['name']              ?? 'Unknown',
-            'position'  => (int)($d['position']    ?? $count + 1),
-            'publisher' => is_array($d['publisher'] ?? null) ? ($d['publisher']['name'] ?? 'Unknown') : ($d['publisher'] ?? 'Unknown'),
-            'video'     => $d['video']             ?? null,
-        ];
+        $count = 0;
+        foreach ($data as $d) {
+            if ($count >= LIST_LIMIT) break;
 
-        $count++;
+            if (!is_array($d)) {
+                continue;
+            }
+
+            $id = (int)($d['id'] ?? $d['position'] ?? 0);
+            if (!$id) continue;
+
+            $creator = $d['creator'] ?? 'Unknown';
+            if (is_array($creator)) {
+                $creator = $creator['name'] ?? 'Unknown';
+            }
+
+            $all[$id] = [
+                'id'        => $id,
+                'name'      => $d['name']              ?? 'Unknown',
+                'position'  => (int)($d['position']    ?? $count + 1),
+                'publisher' => is_string($creator) ? $creator : 'Unknown',
+                'video'     => $d['video']             ?? null,
+            ];
+
+            $count++;
+        }
+
+        log_msg('Parsed ' . count($all) . ' demons from embedded JSON');
+        return $all;
     }
 
-    log_msg('Parsed ' . count($all) . ' demons from API response');
-    return $all;
+    log_msg('Could not find roulette-data JSON in page');
+    return [];
 }
 
 function send_discord(array $embed): void {
@@ -191,7 +190,7 @@ log_msg('Watcher started.');
 $current = fetch_demons();
 
 if (empty($current)) {
-    log_msg('No demons fetched — check site URL or API. Exiting.');
+    log_msg('No demons fetched — check site or HTML structure. Exiting.');
     exit(1);
 }
 
