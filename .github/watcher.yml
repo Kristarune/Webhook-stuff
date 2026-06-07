@@ -1,0 +1,40 @@
+name: Demonlist Watcher
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+  workflow_dispatch:          # lets you run it manually from GitHub too
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # Restore the demon cache from previous run
+      - name: Restore cache
+        uses: actions/cache@v4
+        with:
+          path: demon_cache.json
+          key: demon-cache-${{ github.run_id }}
+          restore-keys: demon-cache
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: curl
+
+      - name: Run watcher
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: php webhook_watcher.php
+
+      # Save the updated cache for next run
+      - name: Save cache
+        uses: actions/cache@v4
+        with:
+          path: demon_cache.json
+          key: demon-cache-${{ github.run_id }}
