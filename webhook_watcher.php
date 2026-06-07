@@ -11,7 +11,7 @@ declare(strict_types=1);
 // ─── CONFIG ─────────────────────────────────────────────────
 define('DISCORD_WEBHOOK', getenv('DISCORD_WEBHOOK') ?: '');
 define('SITE_URL',        'https://completedlist.gamer.gd/demonlist');
-define('API_URL',         'https://completedlist.gamer.gd/demonlist/?json=1');
+define('API_URL',         'https://completedlist.gamer.gd/demonlist/?page=1&json=1');
 define('CACHE_FILE',      __DIR__ . '/demon_cache.json');
 define('LIST_LIMIT',      150);
 // ────────────────────────────────────────────────────────────
@@ -45,31 +45,34 @@ function fetch_demons(): array {
     }
 
     $data = json_decode($body, true);
-    if (empty($data) || !isset($data['demons']) || !is_array($data['demons'])) {
+    if (empty($data) || !is_array($data)) {
         log_msg('Invalid API response format');
         return [];
     }
 
-    $demons = $data['demons'];
+    // The API returns an array of demons directly
+    $demons = $data;
     $count = 0;
 
     foreach ($demons as $d) {
         if ($count >= LIST_LIMIT) break;
 
-        $id = (int)($d['id'] ?? 0);
+        // Handle both id and position as potential identifiers
+        $id = (int)($d['id'] ?? $d['position'] ?? 0);
         if (!$id) continue;
 
         $all[$id] = [
             'id'        => $id,
             'name'      => $d['name']              ?? 'Unknown',
-            'position'  => (int)($d['position']    ?? 0),
-            'publisher' => $d['publisher']['name'] ?? 'Unknown',
+            'position'  => (int)($d['position']    ?? $count + 1),
+            'publisher' => is_array($d['publisher'] ?? null) ? ($d['publisher']['name'] ?? 'Unknown') : ($d['publisher'] ?? 'Unknown'),
             'video'     => $d['video']             ?? null,
         ];
 
         $count++;
     }
 
+    log_msg('Parsed ' . count($all) . ' demons from API response');
     return $all;
 }
 
